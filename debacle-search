@@ -1,0 +1,72 @@
+#!/bin/bash
+
+deb_arch="amd64"
+update_deb_indices() {
+    grep "^deb " "sources.list" |
+    while read type base_uri repo comps
+    do
+        for comp in $comps
+        do
+            uri="$base_uri/dists/$repo/$comp/binary-$deb_arch/Packages.gz"
+            repo_nick="$repo"
+            [[ "$base_uri" =~ "security" ]] && repo_nick="security"
+            # Use "updates" and "backports" instead of squeeze-updates
+            [[ "$repo_nick" =~ "-" ]] && repo_nick="${repo_nick/*-/}"
+            packages="${repo_nick}_${comp}_Packages"
+
+            echo "Downloading $packages"
+            curl -R -o "$packages.gz" "$uri"
+            gunzip "$packages.gz"
+
+            # Create $name.desc files
+            #dir="${repo_nick}_${comp}"
+            #mkdir -p "$dir"
+            #cd "$dir"
+            #awk -vRS= -vFS=\n -vOFS=\n '{split($1,name," "); print > name[2]".desc"}' ../$packages
+            #cd ..
+            #tar czf "$dir.tar.gz" "$dir"
+
+            # Record package names in index
+            sed -n "s/^Filename: /${repo_nick}:${comp}:/ p" $packages > "${repo_nick}_${comp}_index.txt"
+        done
+    done
+}
+
+find_deb() {
+    grep "^deb " "sources.list" |
+    while read type base_uri repo comps
+    do
+        for comp in $comps
+        do
+            uri="$base_uri/dists/$repo/$comp/binary-$deb_arch/Packages"
+            repo_nick="$repo"
+            [[ "$base_uri" =~ "security" ]] && repo_nick="security"
+            # Use "updates" and "backports" instead of squeeze-updates
+            [[ "$repo_nick" =~ "-" ]] && repo_nick="${repo_nick/*-/}"
+            index="${repo_nick}_${comp}_index.txt"
+            grep -P "/$1_.*_.*\$" "$index"
+        done
+    done
+}
+
+print_deb_info() {
+    read repo_nick comp filepath <<< "${1//:/ }"
+    filename="${filepath##*/}"
+    name="${filename%_*_*}"
+    #index="${repo_nick}_${comp}.tar.gz"
+    #packages="${repo_nick}_${comp}_Packages.gz"
+    #zcat "$packages" | awk -vRS= -vFS=\n "/${filename}/{print}" |grep "^Depends:"
+    #tar Oxf "$index" "${repo_nick}_${comp}/$name.desc" 
+    sed -ne '/^Package: '"$name"'$/,/^$/p' "${repo_nick}_${comp}_Packages"
+}
+
+print_deb_deps() {
+    print_deb_info "$1" | grep -E "^Depends|^Package|^$"
+}
+
+case "$1" in
+    update) update_deb_indices ;;
+    deps) shift; print_deb_deps $(find_deb "$1") ;;
+    find) shift; find_deb "$1" ;;
+    info) shift; print_deb_info $(find_deb "$1") ;;
+esac
