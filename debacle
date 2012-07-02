@@ -1,7 +1,19 @@
 #!/bin/bash
 
+VERSION="0.1alpha"
+
 deb_arch="amd64"
+
+prefix="$HOME/debacle"
+
+debacle_dir="$prefix/var/lib/debacle"
+build_dir="$prefix/var/lib/debacle/build"
+deb_dir="$prefix/var/lib/debacle/install"
+package_dir="$prefix/var/lib/debacle/packages"
+state_dir="$prefix/var/lib/debacle/info"
+
 update_deb_indices() {
+    local type base_uri repo comps comp uri repo_nick packages
     grep "^deb " "sources.list" |
     while read type base_uri repo comps
     do
@@ -27,12 +39,13 @@ update_deb_indices() {
             #tar czf "$dir.tar.gz" "$dir"
 
             # Record package names in index
-            sed -n "s/^Filename: /${repo_nick}:${comp}:/ p" $packages > "${repo_nick}_${comp}_index.txt"
+            sed -n "s/^Filename: /${repo}:${comp}:/ p" $packages > "${repo_nick}_${comp}_index.txt"
         done
     done
 }
 
 find_deb() {
+    local type base_uri repo comps comp uri repo_nick index
     grep "^deb " "sources.list" |
     while read type base_uri repo comps
     do
@@ -50,6 +63,7 @@ find_deb() {
 }
 
 print_deb_info() {
+    local repo_nick comp filepath filename name
     read repo_nick comp filepath <<< "${1//:/ }"
     filename="${filepath##*/}"
     name="${filename%_*_*}"
@@ -64,9 +78,51 @@ print_deb_deps() {
     print_deb_info "$1" | grep -E "^Depends|^Package|^$"
 }
 
+deb_uri() {
+    local entry repo comp package_path base_uri
+    entry="$1"
+    read repo comp package_path <<<"${entry//:/ }"
+    base_uri=$(awk '$1 == "deb" && $3 == "'"$repo"'" {print $2}' sources.list)
+    echo "$base_uri/$package_path"
+}
+
+download_deb() {
+    entry="$1"
+    package_uri=$(deb_uri "$entry")
+    wget "$package_uri"
+}
+
+install_deb() {
+    entry="$1"
+    read repo comp package_path <<<"${entry//:/ }"
+    download_deb "$entry"
+    package=$(basename "$package_path")
+    name="${package%%_*}"
+
+    mkdir -p "$state_dir/$name"
+    mkdir -p "$prefix"
+    ar p "$package" data.tar.gz | tar -xvz -C "$prefix" > "$state_dir/$name/files"
+
+    for file in $(sed "s|^\.|$prefix|" "$state_dir/$name/files")
+    do
+        if [[ -x "$file" ]] && [[ -f "$file" ]] 
+        then
+            echo "$file"
+            # ldd test for missing shared libs
+            # apply chrpath hack
+        fi
+    done
+
+    ar p "$package" control.tar.gz | tar -xz -C "$state_dir/$name"
+}
+
 case "$1" in
     update) update_deb_indices ;;
     deps) shift; print_deb_deps $(find_deb "$1") ;;
     find) shift; find_deb "$1" ;;
+    findall) shift; find_deb "$1.*" ;;
     info) shift; print_deb_info $(find_deb "$1") ;;
+    download) shift; download_deb $(find_deb "$1") ;;
+    uri) shift; deb_uri $(find_deb "$1") ;;
+    install) shift; install_deb $(find_deb "$1") ;;
 esac
