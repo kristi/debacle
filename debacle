@@ -39,7 +39,7 @@ update_deb_indices() {
             #tar czf "$dir.tar.gz" "$dir"
 
             # Record package names in index
-            sed -n "s/^Filename: /${repo}:${comp}:/ p" $packages > "${repo_nick}_${comp}_index.txt"
+            sed -n "s|^Filename: |${repo}:${comp}:| p" $packages > "${repo_nick}_${comp}_index.txt"
         done
     done
 }
