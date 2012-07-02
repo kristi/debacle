@@ -1,0 +1,34 @@
+#!/bin/bash
+
+VERSION="0.1alpha"
+
+deb_arch="x86_64"
+deb_mirror="ftp.us.debian.org/debian"
+prefix="$HOME/local"
+debacle_dir="$prefix/var/lib/debacle"
+build_dir="$prefix/var/lib/debacle/build"
+deb_dir="$prefix/var/lib/debacle/install"
+package_dir="$prefix/var/lib/debacle/packages"
+state_dir="$prefix/var/lib/debacle/info"
+
+
+# wget ftp://ftp.us.debian.org/debian/dists/squeeze/Contents-amd64.gz
+# wget ftp://ftp.us.debian.org/debian/dists/squeeze/Release
+
+wget ftp://ftp.us.debian.org/debian/pool/main/f/fakeroot/fakeroot_1.18.4-1_amd64.deb
+
+mkdir -p "$prefix"
+ar p fakeroot_1.18.4-1_amd64.deb data.tar.gz | tar -xvz -C "$prefix" --index-file="files"
+
+for file in $(sed "s|^\.|$prefix|" files)
+do
+    if [[ -x "$file" ]] && [[ -f "$file" ]] 
+    then
+        echo "$file"
+    fi
+done
+
+mkdir -p "$state_dir/fakeroot"
+ar p fakeroot_1.18.4-1_amd64.deb control.tar.gz | tar -xz -C "$state_dir/fakeroot"
+
+

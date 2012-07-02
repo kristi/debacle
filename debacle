@@ -1,34 +1,72 @@
 #!/bin/bash
 
-VERSION="0.1alpha"
+deb_arch="amd64"
+update_deb_indices() {
+    grep "^deb " "sources.list" |
+    while read type base_uri repo comps
+    do
+        for comp in $comps
+        do
+            uri="$base_uri/dists/$repo/$comp/binary-$deb_arch/Packages.gz"
+            repo_nick="$repo"
+            [[ "$base_uri" =~ "security" ]] && repo_nick="security"
+            # Use "updates" and "backports" instead of squeeze-updates
+            [[ "$repo_nick" =~ "-" ]] && repo_nick="${repo_nick/*-/}"
+            packages="${repo_nick}_${comp}_Packages"
 
-deb_arch="x86_64"
-deb_mirror="ftp.us.debian.org/debian"
-prefix="$HOME/local"
-debacle_dir="$prefix/var/lib/debacle"
-build_dir="$prefix/var/lib/debacle/build"
-deb_dir="$prefix/var/lib/debacle/install"
-package_dir="$prefix/var/lib/debacle/packages"
-state_dir="$prefix/var/lib/debacle/info"
+            echo "Downloading $packages"
+            curl -R -o "$packages.gz" "$uri"
+            gunzip "$packages.gz"
 
+            # Create $name.desc files
+            #dir="${repo_nick}_${comp}"
+            #mkdir -p "$dir"
+            #cd "$dir"
+            #awk -vRS= -vFS=\n -vOFS=\n '{split($1,name," "); print > name[2]".desc"}' ../$packages
+            #cd ..
+            #tar czf "$dir.tar.gz" "$dir"
 
-# wget ftp://ftp.us.debian.org/debian/dists/squeeze/Contents-amd64.gz
-# wget ftp://ftp.us.debian.org/debian/dists/squeeze/Release
+            # Record package names in index
+            sed -n "s/^Filename: /${repo_nick}:${comp}:/ p" $packages > "${repo_nick}_${comp}_index.txt"
+        done
+    done
+}
 
-wget ftp://ftp.us.debian.org/debian/pool/main/f/fakeroot/fakeroot_1.18.4-1_amd64.deb
+find_deb() {
+    grep "^deb " "sources.list" |
+    while read type base_uri repo comps
+    do
+        for comp in $comps
+        do
+            uri="$base_uri/dists/$repo/$comp/binary-$deb_arch/Packages"
+            repo_nick="$repo"
+            [[ "$base_uri" =~ "security" ]] && repo_nick="security"
+            # Use "updates" and "backports" instead of squeeze-updates
+            [[ "$repo_nick" =~ "-" ]] && repo_nick="${repo_nick/*-/}"
+            index="${repo_nick}_${comp}_index.txt"
+            grep -P "/$1_.*_.*\$" "$index"
+        done
+    done
+}
 
-mkdir -p "$prefix"
-ar p fakeroot_1.18.4-1_amd64.deb data.tar.gz | tar -xvz -C "$prefix" --index-file="files"
+print_deb_info() {
+    read repo_nick comp filepath <<< "${1//:/ }"
+    filename="${filepath##*/}"
+    name="${filename%_*_*}"
+    #index="${repo_nick}_${comp}.tar.gz"
+    #packages="${repo_nick}_${comp}_Packages.gz"
+    #zcat "$packages" | awk -vRS= -vFS=\n "/${filename}/{print}" |grep "^Depends:"
+    #tar Oxf "$index" "${repo_nick}_${comp}/$name.desc" 
+    sed -ne '/^Package: '"$name"'$/,/^$/p' "${repo_nick}_${comp}_Packages"
+}
 
-for file in $(sed "s|^\.|$prefix|" files)
-do
-    if [[ -x "$file" ]] && [[ -f "$file" ]] 
-    then
-        echo "$file"
-    fi
-done
+print_deb_deps() {
+    print_deb_info "$1" | grep -E "^Depends|^Package|^$"
+}
 
-mkdir -p "$state_dir/fakeroot"
-ar p fakeroot_1.18.4-1_amd64.deb control.tar.gz | tar -xz -C "$state_dir/fakeroot"
-
-
+case "$1" in
+    update) update_deb_indices ;;
+    deps) shift; print_deb_deps $(find_deb "$1") ;;
+    find) shift; find_deb "$1" ;;
+    info) shift; print_deb_info $(find_deb "$1") ;;
+esac
